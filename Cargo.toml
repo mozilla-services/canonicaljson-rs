@@ -3,6 +3,8 @@ name = "canonical_json"
 version = "0.1.0"
 authors = ["Vishwa Patel <vpatel@mozilla.com>"]
 edition = "2018"
+license = "MPL-2.0"
+description = "A Canonical JSON serializer"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
