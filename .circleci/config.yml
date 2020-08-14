@@ -27,7 +27,7 @@ jobs:
           key: v4-cargo-cache-{{ arch }}-{{ checksum "Cargo.lock" }}
       - run:
           name: Run tests
-          command: cargo test
+          command: cargo test --all
 workflows:
   version: 2
   test:
