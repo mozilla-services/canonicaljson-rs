@@ -1,0 +1,96 @@
+Canonical JSON
+
+1. Introduction
+
+  Canonical JSON is a variant of JSON in which values each have a single,
+  unambiguous serialized form. This provides meaningful and repeatable hashes
+  of encoded data. Canonical JSON can be parsed by regular JSON parsers provided
+  that no control characters appear in strings.
+
+2. Differences from JSON
+
+  - Whitespace between tokens is disallowed. Leading and trailing whitespace
+    is likewise disallowed.
+  - String contents are not guaranteed be parsable as UTF-8. Be aware that encoded data may contain escaped unicode characters.
+  - Minus Zero is disallowed
+  - Object keys must appear in lexiographical order and must not be repeated.
+
+3. Example
+
+  JSON:
+
+    {
+        "def": "bar",
+        "abc": 0.000000930258908,
+        "ghi": 1000000000000000000000.0_f64,
+        "rust": "❤",
+        "zoo": [
+            "zorilla",
+            "anteater"
+        ]
+    }
+
+  Canonical JSON:
+    "{"abc":9.30258908e-7,\"def\":\"bar\",\"ghi\":1e+21,\"rust\":\"\\u2764\",\"zoo\":[\"zorilla\",\"anteater\"]}"
+
+4. Grammar
+
+  value:
+    object
+    array
+    string
+    number
+    true
+    false
+    null
+
+  object:
+    {}
+    { members }
+
+  members:
+    pair
+    pair , members
+
+  pair:
+    string : value
+
+  array:
+    []
+    [ elements ]
+
+  elements:
+    value
+    value , elements
+
+  string:
+    ""
+    " chars "
+
+  chars:
+    char
+    char chars
+
+  char:
+    any byte except hex 22 (") or hex 5C (\)
+    \\
+    \"
+
+  number:
+    int
+    float
+
+  float:
+    digit1-9..digit0-9 (.) digit0-9..digit0-9 
+
+  int:
+    digit
+    digit1-9 digits
+
+  digits:
+    digit
+    digit digits
+
+5. References
+
+  Spec derived from: http://wiki.laptop.org/go/Canonical_JSON
