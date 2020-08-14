@@ -1,32 +1,48 @@
-# Canonical JSON library (Remote-Settings)
+# Canonical JSON library
 
-  Canonical JSON is a variant of JSON in which each value has a single,
-  unambiguous serialized form. This provides meaningful and repeatable hashes
-  of encoded data.
+Canonical JSON is a variant of JSON in which each value has a single,
+unambiguous serialized form. This provides meaningful and repeatable hashes
+of encoded data.
 
-Compared to serde_json::to_string
-- String contents are not guaranteed be parsable as UTF-8. Be aware that encoded data may contain escaped unicode characters.
-- Minus Zero is disallowed
-- Object keys must appear in lexiographical order and must not be repeated.
+Canonical JSON can be parsed by regular JSON parsers. The most notable differences compared to usual JSON format ([RFC 7159](https://tools.ietf.org/html/rfc7159) or ``serde_json::to_string()``) are:
 
-[Link to the Canonical Spec](spec.txt)
+- Object keys must appear in lexiographical order and must not be repeated
+- No inter-token whitespace
+- Unicode characters and escaped characters are escaped
 
-Comparsion to other Canonical JSON implementation - https://github.com/zmanian/canonical_json
+This library is used for content signatures verification in [Remote-Settings](https://remote-settings.readthedocs.io/), and its definition precedes other Canonical JSON specs [like this one](https://github.com/gibson042/canonicaljson-spec). The main difference is about float representation:
 
-- Canonical JSON library (Remote-Settings) supports floating-point numbers, exponents, and can convert Unicode characters into Unicode escape sequences
-- Preserves character escapes for {Tab, CarriageReturn, Newline, LineFeed, Quote}
-- Escapes ReverseSolidus
-- Canonical JSON can be parsed by regular JSON parsers
+```diff
+   5. MUST represent all non-integer numbers in exponential notation
+      1. including a nonzero single-digit significand integer part, and
+      2. including a nonempty significand fractional part, and
+      3. including no trailing zeroes in the significand fractional part (other than as part of a ".0" required to satisfy the preceding point), and
+-     4. including a capital "E", and
+-     5. including no plus sign in the exponent, and
++     4. including a lowercase "e", and
++     5. including a plus sign in the exponent, and
+      6. including no insignificant leading zeroes in the exponent
+``` 
+
+## Usage
+
+Add this to your ``Cargo.toml``:
+
+```toml
+[dependencies]
+canonical_json = "0.1.0"
+```
 
 ## Examples
 
 ```rust,no_run
-   use canonical_json::ser::to_string;
    use serde_json::json;
+   use canonical_json::ser::to_string;
+
    fn main() {
      to_string(&json!(null)); // returns "null"
  
-     to_string(&json!("test")); // returns "test"
+     to_string(&json!("we ❤ Rust")); // returns "we \u2764 Rust""
  
      to_string(&json!(10.0_f64.powf(21.0))); // returns "1e+21"
  
@@ -39,6 +55,13 @@ Comparsion to other Canonical JSON implementation - https://github.com/zmanian/c
      to_string(&json!(vec!["one", "two", "three"])); // returns "["one","two","three"]"
    } 
 ```
+
+## See also
+
+* [python-canonicaljson-rs](https://github.com/mozilla-services/python-canonicaljson-rs/): Python bindings for this crate 
+* [CanonicalJSON.jsm](https://searchfox.org/mozilla-central/rev/358cef5d1a87172f23b15e1a705d6f278db4cdad/toolkit/modules/CanonicalJSON.jsm) in Gecko
+* [Original python implementation](https://github.com/Kinto/kinto-signer/blob/6.1.0/kinto_signer/canonicaljson.py) in Remote Settings
+* https://github.com/matrix-org/python-canonicaljson/  (encodes unicode with ``\xDD`` instead of ``\uDDDD``)
 
 ## License
 
