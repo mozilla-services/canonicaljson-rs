@@ -56,6 +56,29 @@ canonical_json = "0.1.0"
    } 
 ```
 
+## Test suite
+
+Run the projet test suite:
+
+```
+$ cargo test
+```
+
+Run @gibson042's Canonical JSON test suite:
+
+```
+$ git clone git@github.com:gibson042/canonicaljson-spec.git
+$ cd canonicaljson-spec/
+$ ./test.sh ../canonicaljson-rs/demo/target/debug/demo
+```
+
+Some known errors:
+
+- `lone leading surrogate in hex escape`
+- `number out of range`
+- `Non-token input after 896 characters: "\u6} surrogate pair\u2014U+1D306`
+
+
 ## See also
 
 * [python-canonicaljson-rs](https://github.com/mozilla-services/python-canonicaljson-rs/): Python bindings for this crate 
