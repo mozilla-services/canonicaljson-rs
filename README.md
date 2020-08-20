@@ -10,19 +10,7 @@ Canonical JSON can be parsed by regular JSON parsers. The most notable differenc
 - No inter-token whitespace
 - Unicode characters and escaped characters are escaped
 
-This library is used for content signatures verification in [Remote-Settings](https://remote-settings.readthedocs.io/), and its definition precedes other Canonical JSON specs [like this one](https://github.com/gibson042/canonicaljson-spec). The main difference is about float representation:
-
-```diff
-   5. MUST represent all non-integer numbers in exponential notation
-      1. including a nonzero single-digit significand integer part, and
-      2. including a nonempty significand fractional part, and
-      3. including no trailing zeroes in the significand fractional part (other than as part of a ".0" required to satisfy the preceding point), and
--     4. including a capital "E", and
--     5. including no plus sign in the exponent, and
-+     4. including a lowercase "e", and
-+     5. including a plus sign in the exponent, and
-      6. including no insignificant leading zeroes in the exponent
-``` 
+This library follows [gibson's Canonical JSON spec](https://github.com/gibson042/canonicaljson-spec).
 
 ## Usage
 
@@ -41,19 +29,19 @@ canonical_json = "0.1.0"
 
    fn main() {
      to_string(&json!(null)); // returns "null"
- 
+
      to_string(&json!("we ❤ Rust")); // returns "we \u2764 Rust""
- 
+
      to_string(&json!(10.0_f64.powf(21.0))); // returns "1e+21"
- 
+
      to_string(&json!({
          "a": "a",
          "id": "1",
          "b": "b"
      })); // returns "{"a":"a","b":"b","id":"1"}"; (orders object keys)
- 
+
      to_string(&json!(vec!["one", "two", "three"])); // returns "["one","two","three"]"
-   } 
+   }
 ```
 
 ## Test suite
@@ -81,7 +69,7 @@ Some known errors:
 
 ## See also
 
-* [python-canonicaljson-rs](https://github.com/mozilla-services/python-canonicaljson-rs/): Python bindings for this crate 
+* [python-canonicaljson-rs](https://github.com/mozilla-services/python-canonicaljson-rs/): Python bindings for this crate
 * [CanonicalJSON.jsm](https://searchfox.org/mozilla-central/rev/358cef5d1a87172f23b15e1a705d6f278db4cdad/toolkit/modules/CanonicalJSON.jsm) in Gecko
 * [Original python implementation](https://github.com/Kinto/kinto-signer/blob/6.1.0/kinto_signer/canonicaljson.py) in Remote Settings
 * https://github.com/matrix-org/python-canonicaljson/  (encodes unicode with ``\xDD`` instead of ``\uDDDD``)
