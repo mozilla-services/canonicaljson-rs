@@ -1,12 +1,13 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
- 
+
 use log::debug;
 use serde::ser::Serialize;
 use serde_json::ser::{CharEscape, Formatter};
 use std::io::Write;
 use std::string::FromUtf8Error as Utf8Error;
+use regex::Regex;
 
 struct JSONFormatter {}
 
@@ -30,7 +31,7 @@ impl Formatter for JSONFormatter {
     where
         W: Write,
     {
-        format_number(writer, value, 10.0_f64.powf(21.0), 10.0_f64.powf(-6.0))?;
+        format_number(writer, value)?;
         Ok(())
     }
 
@@ -97,44 +98,32 @@ impl Formatter for JSONFormatter {
             .to_string()
             .replace(r#"\'"#, "'");
 
-        return format_unicode_in_string(writer, formatted_string).and(Ok(()));
+        return normalize_unicode(writer, formatted_string).and(Ok(()));
     }
 }
 
 fn format_number<W: ?Sized>(
     writer: &mut W,
-    number: f64,
-    lower_bound: f64,
-    upper_bound: f64,
+    number: f64
 ) -> Result<(), std::io::Error>
 where
     W: Write,
 {
-    if (0.0 < number && number < upper_bound) || (number >= lower_bound) {
-        debug!("converting number {} to scientific notation", number);
-        let number_string = format!("{:e}", number);
-        debug!("formatted_number {}", number_string);
-        let mut prev_char = '\0';
-        for curr_char in number_string.chars() {
-            if prev_char == 'e' && curr_char != '-' {
-                // its a positive exponent
-                writer.write("+".as_bytes())?;
-            }
-
-            writer.write(curr_char.to_string().as_bytes())?;
-            prev_char = curr_char;
-        }
-
-        return Ok(());
-    }
-
-    debug!("returning number {} without scientifc notation", number);
-    writer.write(&format!("{}", number).into_bytes())?;
+    let formatted = format!("{:e}", number);
+    let normalized = normalize_number(formatted);
+    writer.write(&normalized.into_bytes())?;
     Ok(())
 }
 
-/// looking for \u{X} \u{XX}, \u{XXX}, \u{XXXX} to remove the curly braces
-fn format_unicode_in_string<W: ?Sized>(
+// force capital-E exponent, remove + signs and leading zeroes
+fn normalize_number(input: String) -> String {
+    // https://github.com/gibson042/canonicaljson-go/blob/b9eb21a76/encode.go#L506-L514
+    let re = Regex::new("(?:E(?:[+]0*|(-|)0+)|e(?:[+]|(-|))0*)([0-9])").unwrap();
+    re.replace_all(&input, "E$1$2$3").to_string()
+}
+
+/// look for \u{X} \u{XX}, \u{XXX}, \u{XXXX} to remove the curly braces
+fn normalize_unicode<W: ?Sized>(
     writer: &mut W,
     serialized_string: String,
 ) -> Result<(), std::io::Error>
@@ -270,25 +259,29 @@ mod tests {
         // negative number
         test_canonical_json!((-123), "-123");
         // non-zero decimals
-        test_canonical_json!((23.1), "23.1");
+        test_canonical_json!((23.1), "2.31E1");
         // trim trailing decimal zeros
-        test_canonical_json!((23.0), "23");
+        test_canonical_json!((23), "23");
+        test_canonical_json!((0.0), "0E0");
+        test_canonical_json!((23.0), "2.3E1");
+        test_canonical_json!((-23.0), "-2.3E1");
         test_canonical_json!((2300), "2300");
         // preserve numbers > 10^-6 and < 10^21
-        test_canonical_json!((0.00099), "0.00099");
-        test_canonical_json!((0.000011), "0.000011");
-        test_canonical_json!((0.0000011), "0.0000011");
-        test_canonical_json!((0.000001), "0.000001");
+        test_canonical_json!((0.00099), "9.9E-4");
+        test_canonical_json!((0.000011), "1.1E-5");
+        test_canonical_json!((0.0000011), "1.1E-6");
+        test_canonical_json!((0.000001), "1E-6");
         // convert to scientific notation if number <= 10^-6 and number >= 10^21
-        test_canonical_json!((0.00000099), "9.9e-7");
-        test_canonical_json!((0.0000001), "1e-7");
-        test_canonical_json!((0.000000930258908), "9.30258908e-7");
-        test_canonical_json!((0.00000000000068272), "6.8272e-13");
+        test_canonical_json!((5.6), "5.6E0");
+        test_canonical_json!((0.00000099), "9.9E-7");
+        test_canonical_json!((0.0000001), "1E-7");
+        test_canonical_json!((0.000000930258908), "9.30258908E-7");
+        test_canonical_json!((0.00000000000068272), "6.8272E-13");
         // very large number >= 10^21
-        test_canonical_json!((10.000_f64.powf(21.0)), "1e+21");
-        test_canonical_json!((10.0_f64.powi(20)), "100000000000000000000");
-        test_canonical_json!((10.0_f64.powi(15) + 0.1), "1000000000000000.1");
-        test_canonical_json!((10.0_f64.powi(16) * 1.1), "11000000000000000");
+        test_canonical_json!((10.000_f64.powf(21.0)), "1E21");
+        test_canonical_json!((10.0_f64.powi(20)), "1E20");
+        test_canonical_json!((10.0_f64.powi(15) + 0.1), "1.0000000000000001E15");
+        test_canonical_json!((10.0_f64.powi(16) * 1.1), "1.1E16");
 
         // serialize string
         test_canonical_json!((""), r#""""#);
@@ -404,7 +397,7 @@ mod tests {
                     "anteater"
                 ]
             },
-            r#"{"abc":9.30258908e-7,"def":"bar","ghi":1e+21,"rust":"\u2764","zoo":["zorilla","anteater"]}"#
+            r#"{"abc":9.30258908E-7,"def":"bar","ghi":1E21,"rust":"\u2764","zoo":["zorilla","anteater"]}"#
         );
 
         // serialize empty array
