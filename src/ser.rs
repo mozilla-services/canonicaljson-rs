@@ -2,12 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use log::debug;
+use regex::Regex;
 use serde::ser::Serialize;
 use serde_json::ser::{CharEscape, Formatter};
 use std::io::Write;
 use std::string::FromUtf8Error as Utf8Error;
-use regex::Regex;
 
 struct JSONFormatter {}
 
@@ -46,28 +45,28 @@ impl Formatter for JSONFormatter {
         match char_escape {
             CharEscape::Quote => {
                 writer.write(b"\\\"")?;
-            },
+            }
             CharEscape::ReverseSolidus => {
                 writer.write(b"\\\\")?;
-            },
+            }
             CharEscape::LineFeed => {
                 writer.write(b"\\n")?;
-            },
+            }
             CharEscape::Tab => {
                 writer.write(b"\\t")?;
-            },
+            }
             CharEscape::CarriageReturn => {
                 writer.write(b"\\r")?;
-            },
+            }
             CharEscape::Solidus => {
                 writer.write(b"\\/")?;
-            },
+            }
             CharEscape::Backspace => {
                 writer.write(b"\\b")?;
-            },
+            }
             CharEscape::FormFeed => {
                 writer.write(b"\\f")?;
-            },
+            }
             CharEscape::AsciiControl(number) => {
                 static HEX_DIGITS: [u8; 16] = *b"0123456789abcdef";
                 let bytes = &[
@@ -102,10 +101,7 @@ impl Formatter for JSONFormatter {
     }
 }
 
-fn format_number<W: ?Sized>(
-    writer: &mut W,
-    number: f64
-) -> Result<(), std::io::Error>
+fn format_number<W: ?Sized>(writer: &mut W, number: f64) -> Result<(), std::io::Error>
 where
     W: Write,
 {
@@ -241,78 +237,65 @@ mod tests {
         init();
 
         test_canonical_json!(null, "null");
-        // serialize nan to null
         test_canonical_json!((std::f64::NAN), "null");
-        // serialize inf to null
         test_canonical_json!((std::f64::INFINITY), "null");
-        // serialize negative inf to null
         test_canonical_json!((std::f64::NEG_INFINITY), "null");
-
-        // serialize bool
-        test_canonical_json!((true), "true");
-        test_canonical_json!((false), "false");
-
-        // serialize number
-        test_canonical_json!((0), "0");
-        // positive number
-        test_canonical_json!((123), "123");
-        // negative number
+        test_canonical_json!(true, "true");
+        test_canonical_json!(false, "false");
+        test_canonical_json!(0, "0");
+        test_canonical_json!(123, "123");
         test_canonical_json!((-123), "-123");
-        // non-zero decimals
-        test_canonical_json!((23.1), "2.31E1");
-        // trim trailing decimal zeros
-        test_canonical_json!((23), "23");
-        test_canonical_json!((0.0), "0E0");
-        test_canonical_json!((23.0), "2.3E1");
+        test_canonical_json!(23.1, "2.31E1");
+        test_canonical_json!(23, "23");
+        test_canonical_json!(1_f64, "1E0");
+        test_canonical_json!(0_f64, "0E0");
+        test_canonical_json!(23.0, "2.3E1");
         test_canonical_json!((-23.0), "-2.3E1");
-        test_canonical_json!((2300), "2300");
-        // preserve numbers > 10^-6 and < 10^21
-        test_canonical_json!((0.00099), "9.9E-4");
-        test_canonical_json!((0.000011), "1.1E-5");
-        test_canonical_json!((0.0000011), "1.1E-6");
-        test_canonical_json!((0.000001), "1E-6");
-        // convert to scientific notation if number <= 10^-6 and number >= 10^21
-        test_canonical_json!((5.6), "5.6E0");
-        test_canonical_json!((0.00000099), "9.9E-7");
-        test_canonical_json!((0.0000001), "1E-7");
-        test_canonical_json!((0.000000930258908), "9.30258908E-7");
-        test_canonical_json!((0.00000000000068272), "6.8272E-13");
-        // very large number >= 10^21
+        test_canonical_json!(2300, "2300");
+        test_canonical_json!(0.00099, "9.9E-4");
+        test_canonical_json!(0.000011, "1.1E-5");
+        test_canonical_json!(0.0000011, "1.1E-6");
+        test_canonical_json!(0.000001, "1E-6");
+        test_canonical_json!(5.6, "5.6E0");
+        test_canonical_json!(0.00000099, "9.9E-7");
+        test_canonical_json!(0.0000001, "1E-7");
+        test_canonical_json!(0.000000930258908, "9.30258908E-7");
+        test_canonical_json!(0.00000000000068272, "6.8272E-13");
         test_canonical_json!((10.000_f64.powf(21.0)), "1E21");
         test_canonical_json!((10.0_f64.powi(20)), "1E20");
         test_canonical_json!((10.0_f64.powi(15) + 0.1), "1.0000000000000001E15");
         test_canonical_json!((10.0_f64.powi(16) * 1.1), "1.1E16");
 
         // serialize string
-        test_canonical_json!((""), r#""""#);
+        test_canonical_json!("", r#""""#);
         //escape quotes
-        test_canonical_json!(" Preserve single quotes'in string", r#"" Preserve single quotes'in string""#);
+        test_canonical_json!(
+            " Preserve single quotes'in string",
+            r#"" Preserve single quotes'in string""#
+        );
         test_canonical_json!(" Escapes quotes \" ", r#"" Escapes quotes \" ""#);
-        test_canonical_json!(("test"), r#""test""#);
+        test_canonical_json!("test", r#""test""#);
         // escapes backslashes
-        test_canonical_json!(("This\\and this"), r#""This\\and this""#);
+        test_canonical_json!("This\\and this", r#""This\\and this""#);
         // convert unicode characters to unicode escape sequences
-        test_canonical_json!(("I ❤ testing"), r#""I \u2764 testing""#);
+        test_canonical_json!("I ❤ testing", r#""I \u2764 testing""#);
 
         // serialize does not alter certain strings (newline, tab, carriagereturn, forwardslashes)
-        test_canonical_json!(("This is a sentence.\n"), r#""This is a sentence.\n""#);
-        test_canonical_json!(("This is a \t tab."), r#""This is a \t tab.""#);
+        test_canonical_json!("This is a sentence.\n", r#""This is a sentence.\n""#);
+        test_canonical_json!("This is a \t tab.", r#""This is a \t tab.""#);
         test_canonical_json!(
             "This is a \r carriage return char.",
             r#""This is a \r carriage return char.""#
         );
-        test_canonical_json!(("image/jpeg"), r#""image/jpeg""#);
-        test_canonical_json!(("image//jpeg"), r#""image//jpeg""#);
+        test_canonical_json!("image/jpeg", r#""image/jpeg""#);
+        test_canonical_json!("image//jpeg", r#""image//jpeg""#);
         // serialize preserves scientific notation number within string
-        test_canonical_json!(("frequency at 10.0e+04"), r#""frequency at 10.0e+04""#);
+        test_canonical_json!("frequency at 10.0e+04", r#""frequency at 10.0e+04""#);
         // serialize preserves invalid unicode escape sequence
-        test_canonical_json!(("I \\u{} testing"), r#""I \\u{} testing""#);
+        test_canonical_json!("I \\u{} testing", r#""I \\u{} testing""#);
         // serialize preserves opening curly brackets when invalid unicode escape sequence
-        test_canonical_json!(("I \\u{1234 testing"), r#""I \\u{1234 testing""#);
-        test_canonical_json!(
-            "I \\u{{12345}} testing",
-            r#""I \\u{{12345}} testing""#
-        );
+        test_canonical_json!("I \\u{1234 testing", r#""I \\u{1234 testing""#);
+        test_canonical_json!("I \\u{{12345}} testing", r#""I \\u{{12345}} testing""#);
 
         // serialize object
         test_canonical_json!(
@@ -404,10 +387,7 @@ mod tests {
         test_canonical_json!([], "[]");
 
         // serialize array should preserve array order
-        test_canonical_json!(
-            (vec!["one", "two", "three"]),
-            r#"["one","two","three"]"#
-        );
+        test_canonical_json!((vec!["one", "two", "three"]), r#"["one","two","three"]"#);
 
         test_canonical_json!((vec![json!({ "key": "✓" })]), r#"[{"key":"\u2713"}]"#);
 
