@@ -209,7 +209,6 @@ pub fn to_string(input: &serde_json::Value) -> Result<String, CanonicalJSONError
 #[cfg(test)]
 mod tests {
     use super::to_string;
-    use env_logger;
     use serde_json::json;
 
     macro_rules! test_canonical_json {
@@ -224,14 +223,8 @@ mod tests {
         };
     }
 
-    fn init() {
-        let _ = env_logger::builder().is_test(true).try_init();
-    }
-
     #[test]
     fn test_to_string() {
-        init();
-
         test_canonical_json!(null, "null");
         test_canonical_json!((std::f64::NAN), "null");
         test_canonical_json!((std::f64::INFINITY), "null");
