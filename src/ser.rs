@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::ser::Serialize;
 use serde_json::ser::{CharEscape, Formatter};
 use std::io::Write;
