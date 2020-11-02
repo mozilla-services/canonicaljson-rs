@@ -135,7 +135,7 @@ where
                 string_iter.next(); // skip the '{' for now
                 let mut index = 0;
 
-                while index < 4 && string_iter.peek() != Some(&'}') && string_iter.peek() != None {
+                while index < 6 && string_iter.peek() != Some(&'}') && string_iter.peek() != None {
                     match string_iter.peek() {
                         Some(character) => characters.push(*character),
                         None => break,
@@ -154,13 +154,31 @@ where
                     if characters.len() == 0 {
                         writer.write(&"{}".as_bytes())?;
                     } else {
-                        writer.write(
-                            &std::iter::repeat("0")
-                                .take(4 - characters.len())
-                                .collect::<String>()
-                                .into_bytes(),
-                        )?;
-                        writer.write(&characters.into_bytes())?;
+                        if characters.len() > 4 {
+                            // Surrogates pairs.
+                            match hex::decode(format!("{:0>6}", characters)) {
+                                Ok(v) => {
+                                    let codepoint = (v[2] as u32)
+                                        + ((v[1] as u32) << 8)
+                                        + ((v[0] as u32) << 16);
+                                    let high = ((codepoint - 0x10000) / 0x400) + 0xD800;
+                                    let low = ((codepoint - 0x10000) % 0x400) + 0xDC00;
+                                    writer.write(format!("{:x}", high).as_bytes())?;
+                                    writer.write(format!("\\u{:x}", low).as_bytes())?;
+                                }
+                                Err(_) => {
+                                    writer.write(&characters.into_bytes())?;
+                                }
+                            };
+                        } else {
+                            writer.write(
+                                &std::iter::repeat("0")
+                                    .take(4 - characters.len())
+                                    .collect::<String>()
+                                    .into_bytes(),
+                            )?;
+                            writer.write(&characters.into_bytes())?;
+                        }
                         string_iter.next(); // skip '}'
                     }
                 }
@@ -285,6 +303,12 @@ mod tests {
         // serialize preserves opening curly brackets when invalid unicode escape sequence
         test_canonical_json!("I \\u{1234 testing", r#""I \\u{1234 testing""#);
         test_canonical_json!("I \\u{{12345}} testing", r#""I \\u{{12345}} testing""#);
+
+        // surrogates pairs
+        test_canonical_json!("𝄞", r#""\ud834\udd1e""#);
+        test_canonical_json!("𝗠𝗼𝘇", r#""\ud835\udde0\ud835\uddfc\ud835\ude07""#);
+        // lowest and highest
+        test_canonical_json!("\u{10000} \u{10FFFF}", r#""\ud800\udc00 \udbff\udfff""#);
 
         // serialize object
         test_canonical_json!(
