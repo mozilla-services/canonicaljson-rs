@@ -3,22 +3,16 @@ use serde::ser::Serialize;
 use serde_json::ser::{CharEscape, Formatter};
 use std::io::Write;
 use std::string::FromUtf8Error as Utf8Error;
+use thiserror::Error;
 
 struct JSONFormatter {}
 
-#[derive(Debug)]
-pub enum CanonicalJSONError {}
-
-impl From<Utf8Error> for CanonicalJSONError {
-    fn from(err: Utf8Error) -> Self {
-        err.into()
-    }
-}
-
-impl From<serde_json::error::Error> for CanonicalJSONError {
-    fn from(err: serde_json::error::Error) -> Self {
-        err.into()
-    }
+#[derive(Debug, Error)]
+pub enum CanonicalJSONError {
+    #[error("UTF-8 related error")]
+    Utf8Error(#[from] Utf8Error),
+    #[error("JSON related error")]
+    JSONError(#[from] serde_json::error::Error)
 }
 
 impl Formatter for JSONFormatter {
