@@ -9,9 +9,9 @@ struct JSONFormatter {}
 
 #[derive(Debug, Error)]
 pub enum CanonicalJSONError {
-    #[error("UTF-8 related error")]
+    #[error("UTF-8 related error: {0}")]
     Utf8Error(#[from] Utf8Error),
-    #[error("JSON related error")]
+    #[error("JSON related error: {0}")]
     JSONError(#[from] serde_json::error::Error)
 }
 
