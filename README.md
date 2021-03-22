@@ -18,7 +18,7 @@ Add this to your ``Cargo.toml``:
 
 ```toml
 [dependencies]
-canonical_json = "0.3.0"
+canonical_json = "0.4.0"
 ```
 
 ## Examples
