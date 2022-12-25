@@ -5,7 +5,24 @@ use std::io::Write;
 use std::string::FromUtf8Error as Utf8Error;
 use thiserror::Error;
 
-struct JSONFormatter {}
+/// Implements the [serde_json::ser::Formatter] trait for serializing [serde_json::Value] objects into their
+/// canonical string representation.
+///
+/// # Example
+///
+/// ```
+/// use serde::Serialize;
+/// use serde_json::json;
+/// use canonical_json::JsonFormatter;
+///
+/// let input = json!(vec!["one", "two", "three"]);
+/// let mut bytes = vec![];
+/// let mut serializer = serde_json::Serializer::with_formatter(&mut bytes, JsonFormatter);
+/// input.serialize(&mut serializer).unwrap();
+///
+/// assert_eq!(String::from_utf8(bytes).unwrap(), r#"["one","two","three"]"#);
+/// ```
+pub struct JsonFormatter;
 
 #[derive(Debug, Error)]
 pub enum CanonicalJSONError {
@@ -15,7 +32,7 @@ pub enum CanonicalJSONError {
     JSONError(#[from] serde_json::error::Error)
 }
 
-impl Formatter for JSONFormatter {
+impl Formatter for JsonFormatter {
     fn write_f64<W: ?Sized>(&mut self, writer: &mut W, value: f64) -> Result<(), std::io::Error>
     where
         W: Write,
@@ -212,7 +229,7 @@ where
 /// ```
 pub fn to_string(input: &serde_json::Value) -> Result<String, CanonicalJSONError> {
     let string = vec![];
-    let mut serializer = serde_json::Serializer::with_formatter(string, JSONFormatter {});
+    let mut serializer = serde_json::Serializer::with_formatter(string, JsonFormatter);
     input.serialize(&mut serializer)?;
     let serialized_string = String::from_utf8(serializer.into_inner())?;
     Ok(serialized_string)
