@@ -12,7 +12,7 @@ pub enum CanonicalJSONError {
     #[error("UTF-8 related error: {0}")]
     Utf8Error(#[from] Utf8Error),
     #[error("JSON related error: {0}")]
-    JSONError(#[from] serde_json::error::Error)
+    JSONError(#[from] serde_json::error::Error),
 }
 
 impl Formatter for JSONFormatter {
@@ -34,28 +34,28 @@ impl Formatter for JSONFormatter {
     {
         match char_escape {
             CharEscape::Quote => {
-                writer.write(b"\\\"")?;
+                writer.write_all(b"\\\"")?;
             }
             CharEscape::ReverseSolidus => {
-                writer.write(b"\\\\")?;
+                writer.write_all(b"\\\\")?;
             }
             CharEscape::LineFeed => {
-                writer.write(b"\\n")?;
+                writer.write_all(b"\\n")?;
             }
             CharEscape::Tab => {
-                writer.write(b"\\t")?;
+                writer.write_all(b"\\t")?;
             }
             CharEscape::CarriageReturn => {
-                writer.write(b"\\r")?;
+                writer.write_all(b"\\r")?;
             }
             CharEscape::Solidus => {
-                writer.write(b"\\/")?;
+                writer.write_all(b"\\/")?;
             }
             CharEscape::Backspace => {
-                writer.write(b"\\b")?;
+                writer.write_all(b"\\b")?;
             }
             CharEscape::FormFeed => {
-                writer.write(b"\\f")?;
+                writer.write_all(b"\\f")?;
             }
             CharEscape::AsciiControl(number) => {
                 static HEX_DIGITS: [u8; 16] = *b"0123456789abcdef";
@@ -82,12 +82,13 @@ impl Formatter for JSONFormatter {
     where
         W: Write,
     {
-        let formatted_string = format!("{}", fragment)
+        let formatted_string = fragment
+            .to_string()
             .escape_default()
             .to_string()
             .replace(r#"\'"#, "'");
 
-        return normalize_unicode(writer, formatted_string).and(Ok(()));
+        normalize_unicode(writer, formatted_string).and(Ok(()))
     }
 }
 
@@ -97,7 +98,7 @@ where
 {
     let formatted = format!("{:e}", number);
     let normalized = normalize_number(formatted);
-    writer.write(&normalized.into_bytes())?;
+    writer.write_all(&normalized.into_bytes())?;
     Ok(())
 }
 
@@ -120,7 +121,7 @@ where
 
     while let Some(curr_char) = string_iter.next() {
         if curr_char == '\\' && string_iter.peek() == Some(&'u') {
-            writer.write(&"\\u".as_bytes())?;
+            writer.write_all("\\u".as_bytes())?;
             string_iter.next();
 
             if string_iter.peek() == Some(&'{') {
@@ -141,12 +142,12 @@ where
 
                 if string_iter.peek() == None {
                     // could not find '}' bracket so must include '{' and following characters
-                    writer.write(&"{".as_bytes())?;
-                    writer.write(&characters.into_bytes())?;
+                    writer.write_all("{".as_bytes())?;
+                    writer.write_all(&characters.into_bytes())?;
                 } else if string_iter.peek() == Some(&'}') {
                     // found '}' - remove '{' and '}' but must pad zeros
-                    if characters.len() == 0 {
-                        writer.write(&"{}".as_bytes())?;
+                    if characters.is_empty() {
+                        writer.write_all("{}".as_bytes())?;
                     } else {
                         if characters.len() > 4 {
                             // Surrogates pairs.
@@ -157,21 +158,16 @@ where
                                         + ((v[0] as u32) << 16);
                                     let high = ((codepoint - 0x10000) / 0x400) + 0xD800;
                                     let low = ((codepoint - 0x10000) % 0x400) + 0xDC00;
-                                    writer.write(format!("{:x}", high).as_bytes())?;
-                                    writer.write(format!("\\u{:x}", low).as_bytes())?;
+                                    writer.write_all(format!("{:x}", high).as_bytes())?;
+                                    writer.write_all(format!("\\u{:x}", low).as_bytes())?;
                                 }
                                 Err(_) => {
-                                    writer.write(&characters.into_bytes())?;
+                                    writer.write_all(&characters.into_bytes())?;
                                 }
                             };
                         } else {
-                            writer.write(
-                                &std::iter::repeat("0")
-                                    .take(4 - characters.len())
-                                    .collect::<String>()
-                                    .into_bytes(),
-                            )?;
-                            writer.write(&characters.into_bytes())?;
+                            writer.write_all(&"0".repeat(4 - characters.len()).into_bytes())?;
+                            writer.write_all(&characters.into_bytes())?;
                         }
                         string_iter.next(); // skip '}'
                     }
@@ -181,7 +177,7 @@ where
             continue;
         }
 
-        writer.write(curr_char.to_string().as_bytes())?;
+        writer.write_all(curr_char.to_string().as_bytes())?;
     }
 
     Ok(())
