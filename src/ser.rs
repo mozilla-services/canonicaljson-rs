@@ -1,5 +1,5 @@
 use regex::Regex;
-use serde::ser::Serialize;
+use serde::ser::{Serialize, SerializeMap, SerializeSeq};
 use serde_json::ser::{CharEscape, Formatter};
 use std::io::Write;
 use std::string::FromUtf8Error as Utf8Error;
@@ -200,6 +200,34 @@ where
     Ok(())
 }
 
+/// A wrapper around `serde_json::Value` that sorts object keys during serialization,
+/// overriding any insertion-order preservation from serde_json's `preserve_order` feature.
+struct SortedValue<'a>(&'a serde_json::Value);
+
+impl<'a> Serialize for SortedValue<'a> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            serde_json::Value::Object(map) => {
+                let mut sorted_keys: Vec<&String> = map.keys().collect();
+                sorted_keys.sort();
+                let mut ser_map = serializer.serialize_map(Some(sorted_keys.len()))?;
+                for key in sorted_keys {
+                    ser_map.serialize_entry(key, &SortedValue(&map[key]))?;
+                }
+                ser_map.end()
+            }
+            serde_json::Value::Array(arr) => {
+                let mut seq = serializer.serialize_seq(Some(arr.len()))?;
+                for item in arr {
+                    seq.serialize_element(&SortedValue(item))?;
+                }
+                seq.end()
+            }
+            other => other.serialize(serializer),
+        }
+    }
+}
+
 /// Serialize a JSON value to String
 ///
 /// # Examples
@@ -226,7 +254,7 @@ where
 pub fn to_string(input: &serde_json::Value) -> Result<String, CanonicalJSONError> {
     let string = vec![];
     let mut serializer = serde_json::Serializer::with_formatter(string, JsonFormatter);
-    input.serialize(&mut serializer)?;
+    SortedValue(input).serialize(&mut serializer)?;
     let serialized_string = String::from_utf8(serializer.into_inner())?;
     Ok(serialized_string)
 }
@@ -433,6 +461,24 @@ mod tests {
                 json!({ "bar": "baz", "last_modified": "45678", "id": "2" }),
             ]),
             r#"[{"foo":"bar","id":"1","last_modified":"12345"},{"bar":"baz","id":"2","last_modified":"45678"}]"#
+        );
+    }
+
+    #[test]
+    fn test_keys_sorted_regardless_of_preserve_order() {
+        // Canonical JSON requires lexicographically sorted keys. to_string() must sort
+        // keys even when serde_json's preserve_order feature is enabled (which uses
+        // IndexMap and retains insertion order instead of sorting).
+        let mut map = serde_json::Map::new();
+        map.insert("z".to_string(), json!(1));
+        map.insert("a".to_string(), json!(2));
+        map.insert("m".to_string(), json!(3));
+
+        let value = serde_json::Value::Object(map);
+        assert_eq!(
+            to_string(&value).unwrap(),
+            r#"{"a":2,"m":3,"z":1}"#,
+            "to_string must sort object keys regardless of serde_json preserve_order feature"
         );
     }
 }
