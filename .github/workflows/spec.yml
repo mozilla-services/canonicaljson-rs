@@ -1,0 +1,25 @@
+name: Spec
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  spec-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout canonicaljson-spec
+        uses: actions/checkout@v4
+        with:
+          repository: gibson042/canonicaljson-spec
+          path: canonicaljson-spec
+
+      - name: Build testsuite binary
+        run: cargo build --manifest-path testsuite/Cargo.toml
+
+      - name: Run spec tests
+        run: canonicaljson-spec/test.sh testsuite/target/debug/testsuite
