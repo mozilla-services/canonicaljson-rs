@@ -5,6 +5,99 @@ use std::io::Write;
 use std::string::FromUtf8Error as Utf8Error;
 use thiserror::Error;
 
+/// Canonicalize an arbitrary-precision number string to canonical JSON form.
+///
+/// Rules:
+/// - Integers (no fractional part): output as plain decimal integer, no sign for zero.
+/// - Non-integers: `d.dddE±n` — one non-zero digit before the decimal, at least one digit
+///   after, no trailing zeros after the last significant digit, capital E, no leading zeros
+///   or plus sign in the exponent.
+fn canonicalize_number(s: &str) -> String {
+    // Strip sign
+    let (negative, s) = if let Some(rest) = s.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, s)
+    };
+
+    // Split off exponent
+    let (mantissa, explicit_exp): (&str, i64) = if let Some(pos) = s.find(|c| c == 'e' || c == 'E')
+    {
+        let exp: i64 = s[pos + 1..].parse().unwrap_or(0);
+        (&s[..pos], exp)
+    } else {
+        (s, 0)
+    };
+
+    // Split mantissa into integer and fractional parts
+    let (int_str, frac_str) = if let Some(pos) = mantissa.find('.') {
+        (&mantissa[..pos], &mantissa[pos + 1..])
+    } else {
+        (mantissa, "")
+    };
+
+    // All significant digits concatenated
+    let all_digits = format!("{}{}", int_str, frac_str);
+    let frac_len = frac_str.len() as i64;
+
+    // base10_exp: value = all_digits_as_integer * 10^base10_exp
+    let base10_exp = explicit_exp - frac_len;
+
+    // Strip leading zeros to get significant digits
+    let significant = all_digits.trim_start_matches('0');
+
+    if significant.is_empty() {
+        return "0".to_string();
+    }
+
+    let n = significant.len() as i64;
+    let sign = if negative { "-" } else { "" };
+
+    // Determine if the value is an integer
+    let is_integer = if base10_exp >= 0 {
+        true
+    } else {
+        let frac_digits = (-base10_exp) as usize;
+        if frac_digits > significant.len() {
+            false
+        } else {
+            significant[significant.len() - frac_digits..]
+                .bytes()
+                .all(|b| b == b'0')
+        }
+    };
+
+    if is_integer {
+        if base10_exp >= 0 {
+            let zeros = "0".repeat(base10_exp as usize);
+            format!("{}{}{}", sign, significant, zeros)
+        } else {
+            let keep = significant.len() - (-base10_exp) as usize;
+            let int_part = &significant[..keep];
+            if int_part.is_empty() {
+                "0".to_string()
+            } else {
+                format!("{}{}", sign, int_part)
+            }
+        }
+    } else {
+        // Canonical exponent: place decimal after first digit
+        let canon_exp = base10_exp + n - 1;
+
+        // Trim trailing zeros from significand
+        let sig_trimmed = significant.trim_end_matches('0');
+
+        // Build significand: always at least one digit after the decimal point
+        let significand = if sig_trimmed.len() == 1 {
+            format!("{}.0", sig_trimmed)
+        } else {
+            format!("{}.{}", &sig_trimmed[..1], &sig_trimmed[1..])
+        };
+
+        format!("{}{}E{}", sign, significand, canon_exp)
+    }
+}
+
 /// Implements the [serde_json::ser::Formatter] trait for serializing [serde_json::Value] objects into their
 /// canonical string representation.
 ///
@@ -41,6 +134,17 @@ impl Formatter for JsonFormatter {
         Ok(())
     }
 
+    fn write_number_str<W: ?Sized>(
+        &mut self,
+        writer: &mut W,
+        value: &str,
+    ) -> Result<(), std::io::Error>
+    where
+        W: Write,
+    {
+        writer.write_all(canonicalize_number(value).as_bytes())
+    }
+
     fn write_char_escape<W: ?Sized>(
         &mut self,
         writer: &mut W,
@@ -75,7 +179,7 @@ impl Formatter for JsonFormatter {
                 writer.write_all(b"\\f")?;
             }
             CharEscape::AsciiControl(number) => {
-                static HEX_DIGITS: [u8; 16] = *b"0123456789abcdef";
+                static HEX_DIGITS: [u8; 16] = *b"0123456789ABCDEF";
                 let bytes = &[
                     b'\\',
                     b'u',
@@ -99,13 +203,7 @@ impl Formatter for JsonFormatter {
     where
         W: Write,
     {
-        let formatted_string = fragment
-            .to_string()
-            .escape_default()
-            .to_string()
-            .replace(r#"\'"#, "'");
-
-        normalize_unicode(writer, formatted_string).and(Ok(()))
+        writer.write_all(fragment.as_bytes())
     }
 }
 
@@ -124,80 +222,6 @@ fn normalize_number(input: String) -> String {
     // https://github.com/gibson042/canonicaljson-go/blob/b9eb21a76/encode.go#L506-L514
     let re = Regex::new("(?:E(?:[+]0*|(-|)0+)|e(?:[+]|(-|))0*)([0-9])").unwrap();
     re.replace_all(&input, "E$1$2$3").to_string()
-}
-
-/// look for \u{X} \u{XX}, \u{XXX}, \u{XXXX} to remove the curly braces
-fn normalize_unicode<W: ?Sized>(
-    writer: &mut W,
-    serialized_string: String,
-) -> Result<(), std::io::Error>
-where
-    W: Write,
-{
-    let mut string_iter = serialized_string.chars().peekable();
-
-    while let Some(curr_char) = string_iter.next() {
-        if curr_char == '\\' && string_iter.peek() == Some(&'u') {
-            writer.write_all("\\u".as_bytes())?;
-            string_iter.next();
-
-            if string_iter.peek() == Some(&'{') {
-                // consume at most 4 characters till '}' is found
-                let mut characters = String::new();
-                string_iter.next(); // skip the '{' for now
-                let mut index = 0;
-
-                while index < 6 && string_iter.peek() != Some(&'}') && string_iter.peek() != None {
-                    match string_iter.peek() {
-                        Some(character) => characters.push(*character),
-                        None => break,
-                    };
-
-                    string_iter.next();
-                    index += 1;
-                }
-
-                if string_iter.peek() == None {
-                    // could not find '}' bracket so must include '{' and following characters
-                    writer.write_all("{".as_bytes())?;
-                    writer.write_all(&characters.into_bytes())?;
-                } else if string_iter.peek() == Some(&'}') {
-                    // found '}' - remove '{' and '}' but must pad zeros
-                    if characters.is_empty() {
-                        writer.write_all("{}".as_bytes())?;
-                    } else {
-                        if characters.len() > 4 {
-                            // Surrogates pairs.
-                            match hex::decode(format!("{:0>6}", characters)) {
-                                Ok(v) => {
-                                    let codepoint = (v[2] as u32)
-                                        + ((v[1] as u32) << 8)
-                                        + ((v[0] as u32) << 16);
-                                    let high = ((codepoint - 0x10000) / 0x400) + 0xD800;
-                                    let low = ((codepoint - 0x10000) % 0x400) + 0xDC00;
-                                    writer.write_all(format!("{:x}", high).as_bytes())?;
-                                    writer.write_all(format!("\\u{:x}", low).as_bytes())?;
-                                }
-                                Err(_) => {
-                                    writer.write_all(&characters.into_bytes())?;
-                                }
-                            };
-                        } else {
-                            writer.write_all(&"0".repeat(4 - characters.len()).into_bytes())?;
-                            writer.write_all(&characters.into_bytes())?;
-                        }
-                        string_iter.next(); // skip '}'
-                    }
-                }
-            }
-
-            continue;
-        }
-
-        writer.write_all(curr_char.to_string().as_bytes())?;
-    }
-
-    Ok(())
 }
 
 /// Serialize a JSON value to String
@@ -261,24 +285,24 @@ mod tests {
         test_canonical_json!((-123), "-123");
         test_canonical_json!(23.1, "2.31E1");
         test_canonical_json!(23, "23");
-        test_canonical_json!(1_f64, "1E0");
-        test_canonical_json!(0_f64, "0E0");
-        test_canonical_json!(23.0, "2.3E1");
-        test_canonical_json!((-23.0), "-2.3E1");
+        test_canonical_json!(1_f64, "1");
+        test_canonical_json!(0_f64, "0");
+        test_canonical_json!(23.0, "23");
+        test_canonical_json!((-23.0), "-23");
         test_canonical_json!(2300, "2300");
         test_canonical_json!(0.00099, "9.9E-4");
         test_canonical_json!(0.000011, "1.1E-5");
         test_canonical_json!(0.0000011, "1.1E-6");
-        test_canonical_json!(0.000001, "1E-6");
+        test_canonical_json!(0.000001, "1.0E-6");
         test_canonical_json!(5.6, "5.6E0");
         test_canonical_json!(0.00000099, "9.9E-7");
-        test_canonical_json!(0.0000001, "1E-7");
+        test_canonical_json!(0.0000001, "1.0E-7");
         test_canonical_json!(0.000000930258908, "9.30258908E-7");
         test_canonical_json!(0.00000000000068272, "6.8272E-13");
-        test_canonical_json!((10.000_f64.powf(21.0)), "1E21");
-        test_canonical_json!((10.0_f64.powi(20)), "1E20");
+        test_canonical_json!((10.000_f64.powf(21.0)), "1000000000000000000000");
+        test_canonical_json!((10.0_f64.powi(20)), "100000000000000000000");
         test_canonical_json!((10.0_f64.powi(15) + 0.1), "1.0000000000000001E15");
-        test_canonical_json!((10.0_f64.powi(16) * 1.1), "1.1E16");
+        test_canonical_json!((10.0_f64.powi(16) * 1.1), "11000000000000000");
 
         // serialize string
         test_canonical_json!("", r#""""#);
@@ -291,8 +315,8 @@ mod tests {
         test_canonical_json!("test", r#""test""#);
         // escapes backslashes
         test_canonical_json!("This\\and this", r#""This\\and this""#);
-        // convert unicode characters to unicode escape sequences
-        test_canonical_json!("I ❤ testing", r#""I \u2764 testing""#);
+        // non-ASCII characters above U+001F are not escaped
+        test_canonical_json!("I ❤ testing", r#""I ❤ testing""#);
 
         // serialize does not alter certain strings (newline, tab, carriagereturn, forwardslashes)
         test_canonical_json!("This is a sentence.\n", r#""This is a sentence.\n""#);
@@ -311,11 +335,10 @@ mod tests {
         test_canonical_json!("I \\u{1234 testing", r#""I \\u{1234 testing""#);
         test_canonical_json!("I \\u{{12345}} testing", r#""I \\u{{12345}} testing""#);
 
-        // surrogates pairs
-        test_canonical_json!("𝄞", r#""\ud834\udd1e""#);
-        test_canonical_json!("𝗠𝗼𝘇", r#""\ud835\udde0\ud835\uddfc\ud835\ude07""#);
-        // lowest and highest
-        test_canonical_json!("\u{10000} \u{10FFFF}", r#""\ud800\udc00 \udbff\udfff""#);
+        // characters above U+FFFF are output as literal UTF-8, not re-encoded as surrogate pairs
+        test_canonical_json!("𝄞", r#""𝄞""#);
+        test_canonical_json!("𝗠𝗼𝘇", r#""𝗠𝗼𝘇""#);
+        test_canonical_json!("\u{10000} \u{10FFFF}", "\"\u{10000} \u{10FFFF}\"");
 
         // serialize object
         test_canonical_json!(
@@ -386,8 +409,8 @@ mod tests {
             r#"{"a":{"a":"a","b":"b"},"b":{"c":"c","d":"d"}}"#
         );
 
-        // escapes unicode characters in object keys
-        test_canonical_json!({"é": "check"}, r#"{"\u00e9":"check"}"#);
+        // non-ASCII characters in object keys are not escaped
+        test_canonical_json!({"é": "check"}, r#"{"é":"check"}"#);
 
         test_canonical_json!(
             {
@@ -400,7 +423,7 @@ mod tests {
                     "anteater"
                 ]
             },
-            r#"{"abc":9.30258908E-7,"def":"bar","ghi":1E21,"rust":"\u2764","zoo":["zorilla","anteater"]}"#
+            r#"{"abc":9.30258908E-7,"def":"bar","ghi":1000000000000000000000,"rust":"❤","zoo":["zorilla","anteater"]}"#
         );
 
         // serialize empty array
@@ -409,13 +432,11 @@ mod tests {
         // serialize array should preserve array order
         test_canonical_json!((vec!["one", "two", "three"]), r#"["one","two","three"]"#);
 
-        test_canonical_json!((vec![json!({ "key": "✓" })]), r#"[{"key":"\u2713"}]"#);
+        test_canonical_json!((vec![json!({ "key": "✓" })]), r#"[{"key":"✓"}]"#);
 
-        // escapes unicode values with 1 preceding zeros
-        test_canonical_json!((vec![json!({ "key": "ę" })]), r#"[{"key":"\u0119"}]"#);
+        test_canonical_json!((vec![json!({ "key": "ę" })]), r#"[{"key":"ę"}]"#);
 
-        // escapes unicode values with 2 preceding zeros
-        test_canonical_json!((vec![json!({ "key": "é" })]), r#"[{"key":"\u00e9"}]"#);
+        test_canonical_json!((vec![json!({ "key": "é" })]), r#"[{"key":"é"}]"#);
 
         // serialize array preserves data
         test_canonical_json!(
