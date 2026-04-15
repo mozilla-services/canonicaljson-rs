@@ -12,7 +12,7 @@ jobs:
     env:
       RUSTDOCFLAGS: -Dwarnings
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - name: Run cargo doc
         run: |
           cargo doc --workspace --no-deps
