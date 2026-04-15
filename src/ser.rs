@@ -5,6 +5,17 @@ use std::io::Write;
 use std::string::FromUtf8Error as Utf8Error;
 use thiserror::Error;
 
+// Compile-time assertion: serde_json must be compiled with the "arbitrary_precision" feature.
+// Without it, serde_json::Number does not implement serde::Deserializer, and more critically,
+// write_number_str is never called — numbers are coerced through f64, losing precision for
+// large integers and non-representable decimals.
+const _: () = {
+    fn _requires<'de, T: serde::Deserializer<'de>>() {}
+    fn _check_arbitrary_precision() {
+        _requires::<serde_json::Number>();
+    }
+};
+
 /// Canonicalize an arbitrary-precision number string to canonical JSON form.
 ///
 /// Rules:
