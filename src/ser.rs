@@ -491,4 +491,19 @@ mod tests {
             "to_string must preserve array item order"
         );
     }
+
+    #[test]
+    fn test_full_json_example() {
+        let input = "./testsuite/search-config-v2.json";
+        let expected = "./testsuite/search-config-v2.canonical.json";
+        let file = std::fs::File::open(input).unwrap();
+        let reader = std::io::BufReader::new(file);
+        let v: serde_json::Value = serde_json::from_reader(reader).unwrap();
+        let serialized = to_string(&v).unwrap();
+        let expected_string = std::fs::read_to_string(expected).unwrap();
+        assert_eq!(
+            serialized, expected_string,
+            "to_string must serialize the full JSON example correctly"
+        );
+    }
 }
