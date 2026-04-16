@@ -481,4 +481,14 @@ mod tests {
             "to_string must sort object keys regardless of serde_json preserve_order feature"
         );
     }
+
+    #[test]
+    fn test_array_items_order_is_preserved() {
+        let array = json!(["z-one", "two", "three"]);
+        assert_eq!(
+            to_string(&array).unwrap(),
+            r#"["z-one","two","three"]"#,
+            "to_string must preserve array item order"
+        );
+    }
 }
