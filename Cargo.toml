@@ -5,6 +5,7 @@ authors = ["Vishwa Patel <vpatel@mozilla.com>"]
 edition = "2018"
 license = "MIT"
 description = "A Canonical JSON serializer"
+repository = "https://github.com/mozilla-services/canonicaljson-rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
